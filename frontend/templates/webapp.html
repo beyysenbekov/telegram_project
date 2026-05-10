@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TaskManager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            background: transparent;
+            padding: 10px;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .task-card {
+            border-radius: 12px;
+            margin-bottom: 10px;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .btn-telegram {
+            width: 100%;
+            border-radius: 10px;
+            padding: 12px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid p-3">
+        <h4 class="mb-3">📋 Мои задачи</h4>
+        
+        <!-- Кнопка создания -->
+        <button class="btn btn-primary btn-telegram mb-3" onclick="showCreateTask()">
+            ➕ Создать задачу
+        </button>
+
+        <!-- Список задач -->
+        <div id="tasksList">
+            <div class="text-center py-3">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания задачи -->
+    <div class="modal fade" id="createModal" tabindex="-1">
+        <div class="modal-dialog modal-fullscreen-sm-down">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Новая задача</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Название</label>
+                        <input type="text" class="form-control" id="taskTitle" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Описание</label>
+                        <textarea class="form-control" id="taskDescription" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Приоритет</label>
+                        <select class="form-select" id="taskPriority">
+                            <option value="низкий">🟢 Низкий</option>
+                            <option value="средний" selected>🟡 Средний</option>
+                            <option value="высокий">🔴 Высокий</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" onclick="createTask()">Создать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Telegram WebApp API
+        let tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Получаем данные пользователя из Telegram
+        const user = tg.initDataUnsafe.user;
+        const telegram_id = user ? user.id : null;
+
+        // Настройка темы
+        document.body.style.backgroundColor = tg.backgroundColor || '#fff';
+
+        // API URL (замени на свой!)
+        const API_URL = window.location.origin + '/api';
+
+        // Загрузка задач
+        async function loadTasks() {
+            if (!telegram_id) {
+                document.getElementById('tasksList').innerHTML = 
+                    '<div class="alert alert-warning">Ошибка: не удалось получить Telegram ID</div>';
+                return;
+            }
+
+            try {
+                // Получаем задачи пользователя по telegram_id
+                const response = await fetch(`${API_URL}/telegram/tasks/${telegram_id}`);
+                const tasks = await response.json();
+
+                if (tasks.length === 0) {
+                    document.getElementById('tasksList').innerHTML = 
+                        '<div class="text-center text-muted py-4">Нет задач<br>Создайте первую!</div>';
+                    return;
+                }
+
+                renderTasks(tasks);
+            } catch (error) {
+                console.error('Ошибка загрузки:', error);
+                document.getElementById('tasksList').innerHTML = 
+                    '<div class="alert alert-danger">Ошибка загрузки задач</div>';
+            }
+        }
+
+        // Отрисовка задач
+        function renderTasks(tasks) {
+            const priorityEmoji = {'высокий': '🔴', 'средний': '🟡', 'низкий': '🟢'};
+            const statusBadge = {'в процессе': 'warning', 'выполнено': 'success'};
+
+            const html = tasks.map(task => `
+                <div class="card task-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">
+                                    ${priorityEmoji[task.priority] || ''} ${task.title}
+                                </h6>
+                                ${task.description ? `<p class="text-muted small mb-2">${task.description}</p>` : ''}
+                                <span class="badge bg-${statusBadge[task.status]}">${task.status}</span>
+                            </div>
+                            ${task.status === 'в процессе' ? `
+                                <button class="btn btn-sm btn-success" onclick="completeTask(${task.id})">
+                                    ✓
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('tasksList').innerHTML = html;
+        }
+
+        // Показать форму создания
+        function showCreateTask() {
+            const modal = new bootstrap.Modal(document.getElementById('createModal'));
+            modal.show();
+        }
+
+        // Создать задачу
+        async function createTask() {
+            const title = document.getElementById('taskTitle').value;
+            const description = document.getElementById('taskDescription').value;
+            const priority = document.getElementById('taskPriority').value;
+
+            if (!title) {
+                tg.showAlert('Введите название задачи');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/telegram/tasks`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        telegram_id: telegram_id,
+                        title: title,
+                        description: description || null,
+                        priority: priority
+                    })
+                });
+
+                if (response.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+                    document.getElementById('taskTitle').value = '';
+                    document.getElementById('taskDescription').value = '';
+                    loadTasks();
+                    tg.showAlert('✅ Задача создана!');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                tg.showAlert('❌ Ошибка создания задачи');
+            }
+        }
+
+        // Выполнить задачу
+        async function completeTask(id) {
+            try {
+                const response = await fetch(`${API_URL}/telegram/tasks/${id}/complete`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({telegram_id: telegram_id})
+                });
+
+                if (response.ok) {
+                    loadTasks();
+                    tg.showAlert('✅ Задача выполнена!');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+            }
+        }
+
+        // Инициализация
+        loadTasks();
+
+        // Кнопка "Назад" в Telegram
+        tg.BackButton.onClick(() => tg.close());
+        tg.BackButton.show();
+    </script>
+</body>
+</html>

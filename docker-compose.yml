@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./tasks.db:/app/tasks.db
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY}
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  bot:
+    build: .
+    volumes:
+      - .:/app
+      - ./tasks.db:/app/tasks.db
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY}
+    command: python backend/bot.py
+    restart: unless-stopped
+    depends_on:
+      - web
+
+volumes:
+  db-data:
